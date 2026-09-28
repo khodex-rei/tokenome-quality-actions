@@ -9,7 +9,7 @@ Single source of truth for quality gates across the Tokenome workspace.
 |--------|---------|
 | `pre-commit-check` | Checkout + toolchain setup + `pre-commit run --all-files` (check mode). |
 | `python-quality` | `ruff format --check`, `isort --check-only`, `ruff check`, `mypy` for uv-managed repos. |
-| `node-quality` | `format:check`, `lint`, `tsc --noEmit` for pnpm-managed repos. |
+| `node-quality` | `format:check`, `lint`, `tsc --noEmit` for pnpm- or npm-managed repos (autodetected from lockfile). Clears stale `.next` typegen before gating. |
 
 All actions are composite actions, not reusable workflows, so repos can
 compose the steps into existing jobs.
@@ -57,12 +57,15 @@ jobs:
 
 ### node-quality
 
+Package manager is autodetected from the lockfile (`pnpm-lock.yaml` → pnpm,
+`package-lock.json` → npm).
+
 ```yaml
 - uses: khodex-rei/tokenome-quality-actions/node-quality@v1
   with:
     node-version: "22"
     working-directory: .
-    app: ""                   # optional pnpm --filter scope
+    app: ""                   # optional workspace scope (pnpm --filter / npm --workspace)
 ```
 
 ## Gate drift checker

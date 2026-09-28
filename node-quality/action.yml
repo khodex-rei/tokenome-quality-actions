@@ -1,6 +1,6 @@
 name: node-quality
 description: >-
-  Node quality gates for pnpm-managed repos.
+  Node quality gates for pnpm- or npm-managed repos (autodetected from lockfile).
   Runs format:check, lint, tsc --noEmit.
 author: khodex-rei
 
@@ -15,7 +15,8 @@ inputs:
     default: .
   app:
     description: >-
-      Optional pnpm --filter scope (e.g. @tokenome/web).
+      Optional workspace scope (e.g. @tokenome/web).
+      pnpm: passed as --filter. npm: passed as --workspace.
       Empty = run at workspace root.
     required: false
     default: ""
@@ -26,7 +27,22 @@ runs:
     - name: Checkout
       uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
+    - name: Detect package manager
+      id: pm
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [ -f pnpm-lock.yaml ]; then
+          echo "pm=pnpm" >> "$GITHUB_OUTPUT"
+        elif [ -f package-lock.json ]; then
+          echo "pm=npm" >> "$GITHUB_OUTPUT"
+        else
+          echo "No pnpm-lock.yaml or package-lock.json in ${{ inputs.working-directory }}" >&2
+          exit 1
+        fi
+      shell: bash
+
     - name: Setup pnpm
+      if: steps.pm.outputs.pm == 'pnpm'
       uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       with:
         version: 10
@@ -36,23 +52,45 @@ runs:
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: ${{ inputs.node-version }}
-        cache: pnpm
+        cache: ${{ steps.pm.outputs.pm }}
 
-    - name: Install dependencies
+    - name: Install dependencies (pnpm)
+      if: steps.pm.outputs.pm == 'pnpm'
       working-directory: ${{ inputs.working-directory }}
       run: pnpm install --frozen-lockfile
+      shell: bash
+
+    - name: Install dependencies (npm)
+      if: steps.pm.outputs.pm == 'npm'
+      working-directory: ${{ inputs.working-directory }}
+      run: npm ci
       shell: bash
 
     - name: Quality gates
       working-directory: ${{ inputs.working-directory }}
       env:
         APP: ${{ inputs.app }}
+        PM: ${{ steps.pm.outputs.pm }}
       run: |
-        filter=""
-        if [ -n "${APP}" ]; then
-          filter="--filter ${APP}"
+        # Clear stale Next.js typegen before gating (breaks tsc in reused worktrees).
+        find . -type d -name node_modules -prune -o -type d -name .next -exec rm -rf {} + 2>/dev/null || true
+
+        if [ "${PM}" = "pnpm" ]; then
+          filter=""
+          if [ -n "${APP}" ]; then
+            filter="--filter ${APP}"
+          fi
+          pnpm ${filter} run format:check
+          pnpm ${filter} run lint
+          pnpm ${filter} exec tsc --noEmit
+        else
+          npm run format:check
+          if [ -n "${APP}" ]; then
+            npm run lint --workspace="${APP}"
+            npm run check-types --workspace="${APP}"
+          else
+            npm run lint
+            npx tsc --noEmit
+          fi
         fi
-        pnpm ${filter} run format:check
-        pnpm ${filter} run lint
-        pnpm ${filter} exec tsc --noEmit
       shell: bash

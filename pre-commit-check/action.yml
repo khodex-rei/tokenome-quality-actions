@@ -1,7 +1,7 @@
 name: pre-commit-check
 description: >-
   Run pre-commit hooks in check mode across all files.
-  Sets up Python/uv or Node/pnpm per the language input.
+  Sets up Python/uv or Node (pnpm/npm autodetected) per the language input.
 author: khodex-rei
 
 inputs:
@@ -48,8 +48,23 @@ runs:
       run: uv sync ${{ inputs.sync-args }}
       shell: bash
 
-    - name: Setup pnpm
+    - name: Detect Node package manager
+      id: pm
       if: inputs.language == 'node'
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [ -f pnpm-lock.yaml ]; then
+          echo "pm=pnpm" >> "$GITHUB_OUTPUT"
+        elif [ -f package-lock.json ]; then
+          echo "pm=npm" >> "$GITHUB_OUTPUT"
+        else
+          echo "No pnpm-lock.yaml or package-lock.json in ${{ inputs.working-directory }}" >&2
+          exit 1
+        fi
+      shell: bash
+
+    - name: Setup pnpm
+      if: inputs.language == 'node' && steps.pm.outputs.pm == 'pnpm'
       uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       with:
         version: 10
@@ -60,12 +75,18 @@ runs:
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: ${{ inputs.node-version }}
-        cache: pnpm
+        cache: ${{ steps.pm.outputs.pm }}
 
-    - name: Install Node dependencies
-      if: inputs.language == 'node'
+    - name: Install Node dependencies (pnpm)
+      if: inputs.language == 'node' && steps.pm.outputs.pm == 'pnpm'
       working-directory: ${{ inputs.working-directory }}
       run: pnpm install --frozen-lockfile
+      shell: bash
+
+    - name: Install Node dependencies (npm)
+      if: inputs.language == 'node' && steps.pm.outputs.pm == 'npm'
+      working-directory: ${{ inputs.working-directory }}
+      run: npm ci
       shell: bash
 
     - name: Setup Python for pre-commit
