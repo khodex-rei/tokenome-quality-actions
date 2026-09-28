@@ -45,7 +45,9 @@ runs:
     - name: Sync Python dependencies
       if: inputs.language == 'python'
       working-directory: ${{ inputs.working-directory }}
-      run: uv sync ${{ inputs.sync-args }}
+      run: |
+        uv sync ${{ inputs.sync-args }}
+        echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       shell: bash
 
     - name: Detect Node package manager
